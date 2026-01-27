@@ -1,6 +1,7 @@
 # FlightJournal
 
 **An Intelligent Flight Price Predictor.**
+
 Feeling tired of winter in Canada? Let's book a trip to Cancun!
 
 FlightJournal is a machine learning-powered application that helps travelers decide whether to **Buy Now** or **Wait** for a better deal from Toronto Pearson Airport to Cancun Airport. Unlike simple rule-based trackers, this program uses a hybrid **Random Forest** model trained on historical data in 2025, synthetic scenarios, and "User Corrections" to provide nuanced advice with confidence scores.
