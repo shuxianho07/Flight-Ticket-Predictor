@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.csv
+
+# C# / .NET
+bin/
+obj/
+.vscode/
+*.user
+
+# OS Junk
+.DS_Store
+Thumbs.db
