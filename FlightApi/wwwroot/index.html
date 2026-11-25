@@ -165,180 +165,74 @@
         }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    
+        [hidden] { display: none !important; }
+        .mode-note { font-size: 0.85rem; line-height: 1.5; color: #5e493b; }
+        #error { color: #9d3429; }
+        #history { width: 100%; border-collapse: collapse; margin: 1em 0; }
+        #history th, #history td { text-align: left; border-bottom: 1px solid #eae0d5; padding: 0.45em; }
     </style>
 </head>
 <body>
-
-    <div class="journal-container">
-        <div class="header">
+    <main class="journal-container">
+        <header class="header">
             <h1>Travel Log</h1>
-            <p>Toronto ✈ Cancun</p>
-        </div>
+            <p>Check a fare by route</p>
+        </header>
 
-        <div class="row">
-            <div class="input-group" style="flex:1">
-                <label class="label-text">Origin</label>
-                <select id="origin" class="cozy-input" disabled>
-                    <option value="YYZ" selected>Toronto</option>
+        <form id="fareForm">
+            <div class="input-group">
+                <label class="label-text" for="route">Airport pair</label>
+                <select id="route" class="cozy-input" required disabled>
+                    <option value="">Loading routes…</option>
                 </select>
-            </div>
-            <div class="input-group" style="flex:1">
-                <label class="label-text">Dest</label>
-                <input type="hidden" id="dest" value="2"> 
-                <select class="cozy-input" disabled>
-                    <option selected>Cancun</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="input-group" style="flex:1">
-                <label class="label-text">Booking Date</label>
-                <input type="date" id="bookingDate" class="cozy-input">
-            </div>
-            <div class="input-group" style="flex:1">
-                <label class="label-text">Flight Date</label>
-                <input type="date" id="flightDate" class="cozy-input">
-            </div>
-        </div>
-
-        <div class="input-group">
-            <label class="label-text">Price Observed ($)</label>
-            <input type="number" id="price" class="cozy-input" placeholder="e.g. 450" value="450">
-        </div>
-
-        <button class="btn-check" onclick="predict()">Analyze Price</button>
-
-        <div id="result-area">
-            
-            <div class="result-header">
-                <div id="decision" class="decision-badge">--</div>
-                <div id="confidence" class="price-context">Confidence: --%</div>
+                <p id="modeNote" class="mode-note"></p>
             </div>
 
-            <div class="meter-container">
-                <div class="meter-bar"></div>
-                <div id="marker" class="meter-marker" style="left: 0%;"></div>
-                <div id="markerLabel" class="meter-label" style="left: 0%;">$0</div>
-                
-                <div class="meter-limits">
-                    <span>$300 (Great Deal)</span>
-                    <span>$800 (Overpriced)</span>
+            <div class="row" id="dateFields">
+                <div class="input-group" style="flex:1">
+                    <label class="label-text" for="bookingDate">Booking Date</label>
+                    <input type="date" id="bookingDate" class="cozy-input">
+                </div>
+                <div class="input-group" style="flex:1">
+                    <label class="label-text" for="flightDate">Flight Date</label>
+                    <input type="date" id="flightDate" class="cozy-input">
                 </div>
             </div>
 
-            <div class="price-context" style="margin-bottom: 15px; font-style: italic;">
-                "Based on historical data, the fair price for this month is roughly <strong id="fairPriceVal">$--</strong>."
+            <div id="periodField" class="input-group" hidden>
+                <label class="label-text" for="period">Historical quarter to compare</label>
+                <select id="period" class="cozy-input"></select>
             </div>
 
-            <div class="chart-container">
-                <canvas id="seasonChart"></canvas>
+            <div class="input-group">
+                <label class="label-text" for="price" id="priceLabel">Price observed ($)</label>
+                <input type="number" id="price" class="cozy-input" placeholder="e.g. 450" min="0.01" max="100000" step="0.01" required>
             </div>
-        </div>
 
-    </div>
+            <button class="btn-check" id="check" type="submit" disabled>Analyze Price</button>
+            <p id="error" role="alert"></p>
+        </form>
 
-    <script>
-        document.getElementById('bookingDate').valueAsDate = new Date();
-        
-        // Data for Chart & Logic
-        const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const avgPrices = [465, 645, 380, 400, 500, 520, 650, 650, 500, 450, 400, 600];
-
-        let myChart = null;
-
-        function renderChart(highlightMonthIndex) {
-            const ctx = document.getElementById('seasonChart').getContext('2d');
-            const bgColors = avgPrices.map((_, i) => i === highlightMonthIndex ? '#C08552' : '#EAE0D5');
-
-            if (myChart) myChart.destroy();
-
-            myChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: monthLabels,
-                    datasets: [{
-                        label: 'Avg Price',
-                        data: avgPrices,
-                        backgroundColor: bgColors,
-                        borderRadius: 4,
-                        barThickness: 10
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { display: false },
-                        x: { grid: { display: false }, ticks: { font: { family: 'Nunito', size: 9 } } }
-                    }
-                }
-            });
-        }
-
-        async function predict() {
-            const destType = document.getElementById('dest').value; 
-            const bookingInput = document.getElementById('bookingDate').value;
-            const flightInput = document.getElementById('flightDate').value;
-            const price = parseFloat(document.getElementById('price').value);
-
-            if (!flightInput || !bookingInput) return;
-
-            const start = new Date(bookingInput);
-            const end = new Date(flightInput);
-            const daysUntil = Math.ceil((end - start) / (1000 * 3600 * 24));
-            const monthIndex = end.getMonth(); 
-            const month = monthIndex + 1;
-
-            if (daysUntil < 0) { alert("Future dates only!"); return; }
-
-            // Get API Prediction
-            const response = await fetch(`/predict?days=${daysUntil}&month=${month}&destType=${destType}&price=${price}`);
-            const data = await response.json();
-
-            // UI UPDATES
-            const area = document.getElementById('result-area');
-            const decisionEl = document.getElementById('decision');
-            const confEl = document.getElementById('confidence');
-            const fairPriceEl = document.getElementById('fairPriceVal');
-            
-            area.style.display = 'block';
-            confEl.innerText = `Confidence: ${data.confidence}`;
-
-            // 1. UPDATE DECISION TEXT
-            if (data.decision.includes("BUY")) {
-                decisionEl.innerText = "Buy Now";
-                decisionEl.style.color = "var(--success)";
-            } else {
-                decisionEl.innerText = "Wait";
-                decisionEl.style.color = "var(--danger)";
-            }
-
-            // 2. UPDATE FAIR PRICE TEXT
-            const optimal = avgPrices[monthIndex];
-            fairPriceEl.innerText = `$${optimal}`;
-
-            // 3. UPDATE METER GAUGE
-            // Scale: Min $300, Max $800
-            const minScale = 300;
-            const maxScale = 800;
-            
-            // Calculate percentage (clamped between 0% and 100%)
-            let percent = ((price - minScale) / (maxScale - minScale)) * 100;
-            if (percent < 0) percent = 0;
-            if (percent > 100) percent = 100;
-
-            const marker = document.getElementById('marker');
-            const markerLabel = document.getElementById('markerLabel');
-
-            marker.style.left = `${percent}%`;
-            markerLabel.style.left = `${percent}%`;
-            markerLabel.innerText = `$${price}`; // Show user's price on the marker
-
-            // 4. RENDER CHART
-            renderChart(monthIndex);
-        }
-    </script>
+        <section id="result-area" aria-live="polite">
+            <div class="result-header">
+                <div id="decision" class="decision-badge"></div>
+                <div id="comparison" class="price-context"></div>
+            </div>
+            <p class="mode-note" id="resultNote"></p>
+            <div class="chart-container" id="chartContainer" hidden>
+                <canvas id="seasonChart" aria-label="Toronto to Cancún demo monthly reference" role="img"></canvas>
+            </div>
+            <div id="historyArea" hidden>
+                <table id="history">
+                    <caption>Published airport-pair fare history</caption>
+                    <thead><tr><th scope="col">Quarter</th><th scope="col">Average fare (USD)</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <a id="source" href="#">U.S. DOT Consumer Airfare Report, Table 1a</a>
+            </div>
+        </section>
+    </main>
+    <script src="/fare-check.js" defer></script>
 </body>
 </html>

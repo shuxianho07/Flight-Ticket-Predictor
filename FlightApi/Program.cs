@@ -1,69 +1,118 @@
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.ML;
 using Microsoft.ML.Data;
-using Microsoft.ML.Transforms.Onnx;
-using System.IO; // Needed for file saving
 
+const string legacyRoute = "YYZ-CUN";
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
-
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-// Load the Brain
-string modelPath = "flight_model.onnx";
-var mlContext = new MLContext();
+var dataPath = Path.Combine(app.Environment.ContentRootPath, "Data", "fare-benchmarks.json");
+using var dataStream = File.OpenRead(dataPath);
+var snapshot = JsonSerializer.Deserialize<FareSnapshot>(dataStream, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+    ?? throw new InvalidDataException("Missing fare benchmark data.");
+var benchmarks = snapshot.Routes.ToDictionary(route => route.Id, StringComparer.OrdinalIgnoreCase);
 
+var modelPath = Path.Combine(app.Environment.ContentRootPath, "flight_model.onnx");
+var mlContext = new MLContext();
 var pipeline = mlContext.Transforms.ApplyOnnxModel(
     modelFile: modelPath,
-    outputColumnNames: new[] { "label", "probabilities" }, 
-    inputColumnNames: new[] { "X" } 
-);
-
+    outputColumnNames: new[] { "label", "probabilities" },
+    inputColumnNames: new[] { "X" });
 var transformer = pipeline.Fit(mlContext.Data.LoadFromEnumerable(new List<FlightInput>()));
-var engine = mlContext.Model.CreatePredictionEngine<FlightInput, FlightPrediction>(transformer);
+using var engine = mlContext.Model.CreatePredictionEngine<FlightInput, FlightPrediction>(transformer);
+var engineLock = new object();
 
-Console.WriteLine(" Smart Model Loaded!");
-
-app.MapGet("/predict", (int days, int month, int destType, double price) =>
+app.MapGet("/api/routes", () =>
 {
-    // 1. Predict
-    var inputData = new FlightInput 
-    { 
-        Features = new float[] { (float)days, (float)month, (float)destType, (float)price } 
+    var routes = new List<object>
+    {
+        new { id = legacyRoute, label = "Toronto (YYZ) → Cancún (CUN)", mode = "legacy-model", periods = Array.Empty<string>() }
     };
-    
-    var prediction = engine.Predict(inputData);
+    routes.AddRange(snapshot.Routes.Select(route => new
+    {
+        id = route.Id,
+        label = route.Label,
+        mode = "historical-benchmark",
+        periods = route.Observations.Select(p => p.Period).OrderDescending().ToArray()
+    }));
+    return Results.Ok(routes);
+});
+
+app.MapGet("/api/benchmark", (string route, decimal price, string? period) =>
+{
+    if (!benchmarks.TryGetValue(route.Trim(), out var market))
+        return Results.NotFound(new { error = "No historical benchmark is available for this airport pair." });
+    if (price <= 0 || price > 100_000m)
+        return Results.BadRequest(new { error = "Enter a positive one-way fare in USD (up to 100,000)." });
+
+    var history = market.Observations.OrderBy(p => p.Period).ToArray();
+    var selected = string.IsNullOrWhiteSpace(period)
+        ? history.Last()
+        : history.FirstOrDefault(p => p.Period.Equals(period.Trim(), StringComparison.OrdinalIgnoreCase));
+    if (selected is null)
+        return Results.NotFound(new { error = "No published fare is available for that quarter." });
+
+    var difference = decimal.Round(price - selected.AverageFare, 2);
+    return Results.Ok(new
+    {
+        route = market.Id,
+        market.Label,
+        currency = "USD",
+        period = selected.Period,
+        averageFare = selected.AverageFare,
+        difference,
+        percentageDifference = decimal.Round(100 * difference / selected.AverageFare, 1),
+        history,
+        snapshot.SourceUrl
+    });
+});
+
+app.MapGet("/predict", (int days, int month, double price, string? route, int? destType) =>
+{
+    // Backward-compatible only for the original route; other routes never call this model.
+    if ((route is not null && !route.Equals(legacyRoute, StringComparison.OrdinalIgnoreCase))
+        || (destType.HasValue && destType != 2))
+        return Results.BadRequest(new { error = "The Buy/Wait demo model supports only Toronto–Cancún." });
+    if (days < 0 || days > 365 || month is < 1 or > 12 || !double.IsFinite(price) || price <= 0 || price > 100_000)
+        return Results.BadRequest(new { error = "Enter a valid price, month and flight date up to 365 days out." });
+
+    FlightPrediction prediction;
+    lock (engineLock)
+        prediction = engine.Predict(new FlightInput { Features = new[] { (float)days, month, 2f, (float)price } });
+
     string decision = prediction.PredictedLabel == 1 ? "BUY NOW" : "WAIT";
-    float confidence = prediction.Probabilities[1]; 
-
-    // 2. LOG THE DATA (The "Learning" Part)
-    // We save what the user searched for. Later, we can use this to re-train!
-    string logLine = $"{DateTime.Now},{days},{month},{destType},{price},{decision},{confidence}";
-    File.AppendAllText("search_history.csv", logLine + Environment.NewLine);
-
-    return new 
-    { 
-        Decision = decision, 
-        Confidence = $"{confidence * 100:0.0}%",
-        Reasoning = "Based on historical pricing patterns."
-    };
+    float modelScore = prediction.Probabilities[(int)prediction.PredictedLabel];
+    return Results.Ok(new
+    {
+        route = legacyRoute,
+        decision,
+        confidence = (modelScore * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%",
+        reasoning = "Experimental model trained on illustrative scenarios and a limited historical reference, not live fare data."
+    });
 });
 
 app.Run();
 
-class FlightInput
+internal sealed record FareSnapshot(string SourceUrl, FareMarket[] Routes);
+internal sealed record FareMarket(string Id, string Label, FareQuarter[] Observations);
+internal sealed record FareQuarter(string Period, decimal AverageFare);
+
+internal sealed class FlightInput
 {
     [VectorType(4)]
     [ColumnName("X")]
-    public float[] Features { get; set; } 
+    public float[] Features { get; set; } = Array.Empty<float>();
 }
 
-class FlightPrediction
+internal sealed class FlightPrediction
 {
     [ColumnName("label")]
-    public long[] PredictedLabelArr { get; set; } 
+    public long[] PredictedLabelArr { get; set; } = Array.Empty<long>();
     public long PredictedLabel => PredictedLabelArr[0];
 
     [ColumnName("probabilities")]
-    public float[] Probabilities { get; set; }
+    public float[] Probabilities { get; set; } = Array.Empty<float>();
 }

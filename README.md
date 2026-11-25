@@ -1,107 +1,38 @@
 # FlightJournal
 
-**An Intelligent Flight Price Predictor.**
+Check an airfare by airport pair. The app has two clearly separate modes:
 
-Feeling tired of winter in Canada? Let's book a trip to Cancun!
+| Route | What you get |
+| --- | --- |
+| Toronto Pearson (YYZ) to Cancún (CUN) | The original experimental Buy/Wait demo, using the existing ONNX model. |
+| New York (JFK)–Los Angeles (LAX), New York (JFK)–Miami (MIA), Boston (BOS)–Chicago (ORD), Los Angeles (LAX)–San Francisco (SFO), and New York (JFK)–Atlanta (ATL) | Compare your observed one-way USD fare with a published quarterly airport-pair average. These routes do not generate a Buy/Wait forecast. |
 
-FlightJournal is a machine learning-powered application that helps travelers decide whether to **Buy Now** or **Wait** for a better deal from Toronto Pearson Airport to Cancun Airport. Unlike simple rule-based trackers, this program uses a hybrid **Random Forest** model trained on historical data in 2025, synthetic scenarios, and "User Corrections" to provide nuanced advice with confidence scores.
+## Run
 
-The interface features a **"Journal" aesthetic**, designed to make travel planning feel calm and organized rather than stressful.
+With the .NET 8 SDK installed:
 
----
+```sh
+dotnet run --project FlightApi --no-launch-profile --urls http://127.0.0.1:5005
+```
 
-## Features
+Open http://127.0.0.1:5005. The snapshot and existing model are included; no provider key or training step is required. The optional legacy chart uses Chart.js, but both fare checks work without it.
 
-* **Machine Learning Model:** Uses a Random Forest Classifier trained on real seasonality data and synthetic pricing scenarios.
-* **Active Learning:** Implements Hard Example Mining to fix edge cases like "Early Bird" specials or "Panic Buying."
-* **Visual Context:**
-    * **Seasonality Bar Chart:** Shows historical average prices for every month.
-    * **Price Meter:** A visual gauge showing if the current price is a Steal or a Rip-off.
-* **Smart Advice:** Dynamic text generation explaining *why* you should buy or wait (e.g., "You are beating the market by $50" or "Wait until March").
-* **High Performance:** The Python-trained model is exported to **ONNX** and runs continuously in a high-speed **.NET 8 Web API**.
+- `GET /api/routes` returns supported route IDs, their modes and observed quarters.
+- `GET /api/benchmark?route=JFK-LAX&price=450&period=2026-Q1` compares $450 with the $508.31 published average. Omit `period` to use the route's latest published quarter.
+- `GET /predict?route=YYZ-CUN&days=78&month=4&price=350` runs the original demo. Requests for other routes are rejected instead of reusing the Cancún model.
 
----
+## Data and limitations
 
-## Tech Stack
+The bundled benchmark is a small snapshot of public [U.S. Department of Transportation Consumer Airfare Report, Table 1a](https://catalog.data.gov/dataset/consumer-airfare-report-table-1a-all-u-s-airport-pair-markets). The included observations run from 2025 Q1 through 2026 Q1. Fares are rounded to cents. Each airport-pair average pools both travel directions, includes ticket taxes and mandatory fees, and excludes optional fees. Round-trip ticket fares are prorated by the source. The benchmark cannot tell whether an individual fare will rise or fall, or retrieve live quotes.
 
-### Data Science
-* **Python:** Data processing and model training.
-* **Scikit-Learn:** Random Forest implementation.
-* **Pandas:** Data manipulation and synthetic data generation.
-* **ONNX (Open Neural Network Exchange):** Used to port the model from Python to C#.
+To refresh the selected markets with Python 3:
 
-### Backend (The Engine)
-* **C# / .NET 8:** Web API.
-* **Microsoft.ML.OnnxRuntime:** Runs the AI model for real-time inference.
+```sh
+python scripts/update_dot_fares.py --from-year 2025 --through-year 2026
+```
 
-### Frontend (The Face)
-* **HTML5 / CSS3:** Custom UI design system (including CSS Variables, Animations).
-* **JavaScript (Vanilla):** Logic for API calls, meter calculations, and advice generation.
-* **Chart.js:** Rendering the seasonality bar charts.
+The original YYZ–CUN ONNX model uses airfare references, synthetic scenarios, and manually labeled examples. Its score is not a calibrated probability of finding a cheaper fare, and the old monthly chart is illustrative. The existing model files and training scripts are unchanged. Route-specific Buy/Wait forecasts would require time-stamped comparable fare quotes observed repeatedly before departure, rights to use that data, and chronological out-of-sample validation.
 
----
+## Verify the running app
 
-## Installation & Setup
-
-### Prerequisites
-* **Python 3.x** (with `pandas`, `scikit-learn`, `skl2onnx`)
-* **.NET 8.0 SDK**
-
-### Step 1: Train the Brain (Python)
-Before the app can run, you must teach the AI and generate the brain file (`.onnx`).
-
-1.  Navigate to the project root.
-2.  Install dependencies:
-    ```bash
-    pip install pandas scikit-learn skl2onnx numpy
-    ```
-3.  Run the training script:
-    ```bash
-    python train_real_data.py
-    ```
-    *Output:* `Model exported! April 14 @ $350 should now be a BUY.`
-
-### Step 2: Transplant the Brain
-Copy the generated model into the API folder so the backend can access it.
-
-* **Windows:**
-    ```powershell
-    copy flight_model.onnx FlightApi\
-    ```
-* **Mac/Linux:**
-    ```bash
-    cp flight_model.onnx FlightApi/
-    ```
-
-### Step 3: Launch the Application
-1.  Navigate to the API folder:
-    ```bash
-    cd FlightApi
-    ```
-2.  Start the server:
-    ```bash
-    dotnet run --urls "http://localhost:5005"
-    ```
-3.  Open your browser and go to:
-    **[http://localhost:5005](http://localhost:5005)**
-
----
-
-## Project Structure
-
-```text
-FlightTicket/
-│
-├── train_real_data.py       # The Python Training Script (Run this first)
-├── amCharts.csv             # The raw data source
-├── flight_model.onnx        # The exported AI Brain (Generated file)
-│
-├── FlightApi/               # The .NET Backend Folder
-│   ├── Program.cs           # C# API Logic (Loads ONNX, serves HTML)
-│   ├── flight_model.onnx    # The copy of the brain used by the server
-│   ├── FlightApi.csproj     # Project settings
-│   │
-│   └── wwwroot/             # The Frontend Folder
-│       └── index.html       # The "Cozy Journal" UI & Logic
-│
-└── README.md                # This file
+With the server running, run `python scripts/smoke_routes.py`. It verifies route discovery, the bundled fare comparisons, invalid-route handling, and the Toronto–Cancún ONNX response through the HTTP endpoints.
