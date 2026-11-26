@@ -12,4 +12,9 @@
     <PackageReference Include="Microsoft.ML.OnnxTransformer" Version="5.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="flight_model.onnx" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Data/*-fares.json.gz" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
