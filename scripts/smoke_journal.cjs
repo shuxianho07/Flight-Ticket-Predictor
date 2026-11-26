@@ -84,11 +84,11 @@ async function run() {
         assert.equal(app.get('saved-trip').options.length, 1, 'Only three-letter codes accepted');
         app.submit('trip-form', {
             origin: 'YYZ', destination: 'HND', departure: '2030-05-01',
-            kind: 'one-way', cabin: 'Business', currency: 'JPY', target: '75000'
+            kind: 'one-way', cabin: 'Business', currency: 'JPY', target: '175000'
         });
         assert.match(app.text('trip-summary'), /No quotes/);
-        app.submit('quote-form', { date: later, amount: '70000', note: 'Airline' });
-        assert.match(app.text('trip-summary'), /JPY.*70,000/);
+        app.submit('quote-form', { date: later, amount: '170000', note: 'Airline' });
+        assert.match(app.text('trip-summary'), /JPY.*170,000/);
         assert.match(app.text('trip-summary'), /meets your target/);
         app.get('export-journal').click();
         const backup = await app.downloads[1].blob.text();

@@ -25,7 +25,7 @@
         && date >= '1900-01-01' && Number.isFinite(Date.parse(date))
         && new Date(date).toISOString().slice(0, 10) === date;
     const validId = id => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id);
-    const maxAmount = 100000;
+    const maxAmount = 10_000_000;
     const scale = currency => currency === 'JPY' ? 1 : 100;
     const money = (cents, currency) => new Intl.NumberFormat(undefined, {
         style: 'currency', currency, currencyDisplay: 'code'
@@ -35,7 +35,7 @@
         if (optional && raw === '') return null;
         const pattern = currency === 'JPY' ? /^\d+$/ : /^\d+(?:\.\d{1,2})?$/;
         const units = Math.round(Number(raw) * scale(currency));
-        ask(pattern.test(raw) && fareValid(units, currency), 'Enter a positive fare up to 100,000 in the trip currency.');
+        ask(pattern.test(raw) && fareValid(units, currency), 'Enter a positive fare up to 10,000,000 in the trip currency.');
         return units;
     }
 
