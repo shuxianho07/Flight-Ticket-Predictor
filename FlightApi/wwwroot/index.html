@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flight Journal</title>
+    <title>FlightJournal</title>
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,400&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -32,7 +32,7 @@
 
         .journal-container {
             width: 100%;
-            max-width: 420px;
+            max-width: 650px;
             background: var(--card-bg);
             border-radius: 12px;
             padding: clamp(18px, 6vw, 40px);
@@ -119,6 +119,23 @@
         [hidden] { display: none !important; }
         .mode-note { font-size: 0.85rem; line-height: 1.5; color: #5e493b; }
         #error { color: #9d3429; }
+        .journal-section { margin-top: 2rem; padding-top: 1rem; border-top: 2px solid #eae0d5; }
+        .journal-section h2, .journal-section h3 { font-family: 'Lora', serif; }
+        .journal-section label { display: grid; gap: .3rem; margin: .6rem 0; font-size: .94rem; }
+        .journal-section input, .journal-section select, .journal-button { min-width: 0; width: 100%; box-sizing: border-box; padding: .55rem; font: inherit; color: inherit; background: #fffdfa; border: 1px solid #a88c77; border-radius: 4px; }
+        .journal-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1rem; align-items: end; margin: 0 0 1rem; }
+        .journal-wide { grid-column: 1 / -1; margin: 0; }
+        .journal-button { width: auto; cursor: pointer; margin: .25rem 0; }
+        .journal-button[type="submit"] { color: var(--button-text); background: var(--button-bg); font-weight: 700; }
+        .journal-delete { color: #8a2718; }
+        .journal-section summary { cursor: pointer; font-weight: 700; padding: .5rem 0; }
+        .journal-history { overflow-x: auto; }
+        .journal-history table { width: 100%; border-collapse: collapse; overflow-wrap: anywhere; }
+        .journal-history th, .journal-history td { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid #eae0d5; vertical-align: top; }
+        .journal-history caption { text-align: left; font-weight: 700; }
+        #trip-summary { font-weight: 700; }
+        #journal-storage-note { color: #8a2718; }
+        @media (max-width: 380px) { .journal-grid { grid-template-columns: 1fr; } }
         #history { width: 100%; border-collapse: collapse; margin: 1em 0; }
         #history th, #history td { text-align: left; border-bottom: 1px solid #eae0d5; padding: 0.45em; }
     </style>
@@ -126,8 +143,9 @@
 <body>
     <main class="journal-container">
         <header class="header">
-            <h1>Travel Log</h1>
-            <p>Check a fare by route</p>
+            <h1>FlightJournal</h1>
+            <p>Check fares and keep a record of what you find.</p>
+            <nav aria-label="FlightJournal tools"><a href="#journal">Track a trip</a> · <a href="#fareForm">Check a fare</a></nav>
         </header>
 
         <form id="fareForm">
@@ -199,7 +217,61 @@
             </form>
         </details>
 
+        <section id="journal" class="journal-section" aria-labelledby="journal-heading">
+            <h2 id="journal-heading">Trip tracker</h2>
+            <p class="mode-note">Save trips, log comparable fares, and see whether the latest quote meets your target. No live price feed or background alerts. Records are stored in this browser only.</p>
+            <p id="journal-storage-note" role="status" hidden></p>
+            <details id="trip-editor">
+                <summary>Add a trip</summary>
+                <form id="trip-form" class="journal-grid">
+                    <label>From (airport code)<input name="origin" placeholder="YYZ" required pattern="[A-Za-z]{3}" maxlength="3" autocomplete="off"></label>
+                    <label>To (airport code)<input name="destination" placeholder="YVR" required pattern="[A-Za-z]{3}" maxlength="3" autocomplete="off"></label>
+                    <label>Departure<input name="departure" type="date" required></label>
+                    <label>Trip type<select name="kind"><option value="one-way">One-way</option><option value="round-trip">Round trip</option></select></label>
+                    <label id="return-field" hidden>Return<input name="returnDate" type="date" disabled></label>
+                    <label>Cabin<select name="cabin"><option>Economy</option><option>Premium economy</option><option>Business</option><option>First</option></select></label>
+                    <label>Currency<select name="currency"><option>CAD</option><option>USD</option><option>EUR</option><option>GBP</option><option>JPY</option><option>AUD</option><option>MXN</option><option>CNY</option><option>HKD</option><option>SGD</option><option>INR</option></select></label>
+                    <label>Target fare (optional)<input name="target" type="number" min="0.01" max="10000000" step="0.01"></label>
+                    <button class="journal-button" type="submit">Save trip</button>
+                </form>
+            </details>
+            <label id="trip-pick" hidden>Saved trip<select id="saved-trip"></select></label>
+            <p id="trip-empty">No trips yet. Add a trip to start tracking quotes.</p>
+            <div id="trip-panel" hidden>
+                <h3 id="trip-title"></h3>
+                <p id="trip-details" class="mode-note"></p>
+                <p id="trip-summary"></p>
+                <form id="target-form" class="journal-grid">
+                    <label>Target fare<input name="target" type="number" min="0.01" max="10000000" step="0.01" placeholder="Leave blank to clear"></label>
+                    <button class="journal-button" type="submit">Update target</button>
+                </form>
+                <form id="quote-form" class="journal-grid">
+                    <label>Quote date<input name="date" type="date" required></label>
+                    <label id="quote-amount-label">Total fare<input name="amount" type="number" min="0.01" max="10000000" step="0.01" required></label>
+                    <label class="journal-wide">Source or note (optional)<input name="note" maxlength="100" placeholder="e.g. airline site, carry-on included"></label>
+                    <p class="mode-note journal-wide">Use the total for one traveler, including taxes, with the same dates, cabin and baggage terms. Latest and lowest reflect only the quotes you log.</p>
+                    <button class="journal-button" type="submit">Log quote</button>
+                </form>
+                <div id="quote-history" class="journal-history" hidden>
+                    <table>
+                        <caption>Logged quotes (newest first)</caption>
+                        <thead><tr><th scope="col">Date</th><th scope="col">Fare</th><th scope="col">Source or note</th><th scope="col">Action</th></tr></thead>
+                        <tbody id="quote-rows"></tbody>
+                    </table>
+                    <button type="button" id="quote-csv" class="journal-button">Export trip CSV</button>
+                </div>
+                <button type="button" id="remove-trip" class="journal-button journal-delete">Delete trip</button>
+            </div>
+            <p id="journal-status" role="status"></p>
+            <details id="journal-backup">
+                <summary>Back up or transfer trips</summary>
+                <p class="mode-note">Export a backup before clearing browser data or switching devices. Import adds new trips without overwriting existing ones; duplicates are skipped. Backups contain your itinerary and notes.</p>
+                <button type="button" id="export-journal" class="journal-button">Download backup</button>
+                <label>Import a FlightJournal backup<input id="import-journal" type="file" accept=".json,application/json"></label>
+            </details>
+        </section>
     </main>
     <script src="/fare-check.js" defer></script>
+    <script src="/journal.js" defer></script>
 </body>
 </html>
