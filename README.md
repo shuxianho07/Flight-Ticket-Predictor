@@ -59,3 +59,22 @@ python scripts/update_dot_fares.py --from-year 2025 --through-year 2026
 
 With the app running, verify the served UI assets, both scopes of historical
 comparisons, and legacy ONNX inference with `python scripts/smoke_routes.py`.
+
+## Trip tracker
+
+Create a trip for any two airport codes, choose exact travel dates, cabin and
+currency, then log the total fare per traveler as you shop. The tracker shows
+the latest quote, your lowest logged quote, change from the previous quote,
+and whether your latest fare meets an optional target. It never mixes
+different itinerary dates, cabins or currencies, and it never sends a quote
+to a server. Use the same baggage terms for each quote.
+
+Trips are saved in the current browser for this site. They do not sync and
+can be lost if you clear site data or use private browsing. Use **Back up or
+transfer trips** to export/import JSON, or **Export trip CSV** for a spreadsheet.
+Import does not replace already-saved itineraries. A target is checked when
+you log or view your own quotes; it does not send notifications or watch fares.
+
+To smoke-test the served tracker, install `jsdom@26` in a temporary Node
+environment, expose it through `NODE_PATH`, then run
+`node scripts/smoke_journal.cjs [base-url]` (Node 22+).
