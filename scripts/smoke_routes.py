@@ -24,15 +24,21 @@ def main():
     assert b'id="fareForm"' in fetch('/')
     assert b'/api/benchmark' in fetch('/fare-check.js')
     routes = json.loads(fetch('/api/routes'))
-    assert {r['id'] for r in routes} == {'YYZ-CUN', 'JFK-LAX', 'JFK-MIA', 'BOS-ORD', 'LAX-SFO', 'JFK-ATL'}
-    for route in routes:
-        if route['mode'] == 'legacy-model':
-            assert route['id'] == 'YYZ-CUN'
-            continue
-        comparison = json.loads(fetch('/api/benchmark', route=route['id'], price=450))
-        assert comparison['route'] == route['id'] and comparison['currency'] == 'USD'
+    by_id = {route['id']: route for route in routes}
+    assert len(by_id) == len(routes)
+    assert len([r for r in routes if r['scope'] == 'airport']) >= 1000
+    assert len([r for r in routes if r['scope'] == 'city']) >= 5000
+    assert [r['id'] for r in routes if r['mode'] == 'legacy-model'] == ['YYZ-CUN']
+    seattle_boston = next(r for r in routes if r['scope'] == 'city' and
+                          'Seattle' in r['label'] and 'Boston' in r['label'])
+    for key in ('JFK-LAX', 'JFK-MIA', 'BOS-ORD', 'LAX-SFO', 'JFK-ATL', seattle_boston['id']):
+        route = by_id[key]
+        comparison = json.loads(fetch('/api/benchmark', route=key, price=450))
+        assert comparison['route'] == key and comparison['currency'] == 'USD'
+        assert comparison['scope'] == route['scope']
         assert comparison['period'] == max(route['periods'])
-        assert len(comparison['history']) >= 5
+        assert [point['period'] for point in comparison['history']] == sorted(route['periods'])
+        assert all(point['averageFare'] > 0 for point in comparison['history'])
     compare = json.loads(fetch('/api/benchmark', route='JFK-LAX', price=450, period='2026-Q1'))
     assert compare['averageFare'] == 508.31 and compare['difference'] == -58.31
     assert compare['percentageDifference'] == -11.5
@@ -44,7 +50,7 @@ def main():
     legacy = json.loads(fetch('/predict', route='YYZ-CUN', days=78, month=4, price=350))
     assert legacy['decision'] in {'BUY NOW', 'WAIT'} and legacy['route'] == 'YYZ-CUN'
     assert 0 <= float(legacy['confidence'].rstrip('%')) <= 100
-    print('PASS: all six route modes, five observed fare comparisons, legacy ONNX inference and unsupported-route guards.')
+    print(f'PASS: {len(routes) - 1:,} historical markets, airport and city fare comparisons, legacy ONNX, and unsupported-route guards.')
 
 
 if __name__ == '__main__':

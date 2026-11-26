@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flight Journal</title>
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,400&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-color: #F2EBE5;
@@ -36,7 +35,8 @@
             max-width: 420px;
             background: var(--card-bg);
             border-radius: 12px;
-            padding: 40px;
+            padding: clamp(18px, 6vw, 40px);
+            box-sizing: border-box;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 10px 40px rgba(74, 59, 50, 0.1);
             border: 1px solid rgba(141, 123, 104, 0.2);
         }
@@ -108,61 +108,11 @@
             color: var(--text-sub);
         }
 
-        /* --- PRICE METER (Visual Gauge) --- */
-        .meter-container {
-            position: relative;
-            height: 30px;
-            margin: 20px 0 30px 0;
-        }
-        
-        .meter-bar {
-            position: absolute;
-            top: 12px;
-            left: 0;
-            width: 100%;
-            height: 6px;
-            background: linear-gradient(to right, var(--success) 0%, #D4E157 40%, var(--danger) 100%);
-            border-radius: 3px;
-            opacity: 0.7;
-        }
-
-        .meter-marker {
-            position: absolute;
-            top: 5px; /* Centers it over the bar */
-            width: 4px;
-            height: 20px;
-            background: var(--text-main);
-            border-radius: 2px;
-            transform: translateX(-50%);
-            transition: left 0.5s ease-out;
-            z-index: 2;
-        }
-        
-        .meter-label {
-            position: absolute;
-            top: -20px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: var(--text-main);
-            transform: translateX(-50%);
-            white-space: nowrap;
-            transition: left 0.5s ease-out;
-        }
-
-        .meter-limits {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.7rem;
-            color: var(--text-sub);
-            margin-top: 22px;
-        }
-
-        /* Chart container */
-        .chart-container {
-            margin-top: 20px;
-            height: 140px;
-            width: 100%;
-        }
+        .chart-container { margin-top: 20px; }
+        #seasonChart { display: flex; gap: 4px; list-style: none; padding: 0; }
+        #seasonChart li { flex: 1; min-width: 0; display: grid; grid-template-rows: 80px auto; text-align: center; font-size: 10px; }
+        #seasonChart .bar { align-self: end; background: #eae0d5; border-radius: 3px 3px 0 0; }
+        #seasonChart [aria-current="true"] .bar { background: #C08552; }
 
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     
@@ -182,7 +132,10 @@
 
         <form id="fareForm">
             <div class="input-group">
-                <label class="label-text" for="route">Airport pair</label>
+                <label class="label-text" for="routeFilter">Search U.S. cities or airport codes</label>
+                <input id="routeFilter" type="search" class="cozy-input" placeholder="e.g. Seattle Boston or SEA JFK" maxlength="80" autocomplete="off" disabled>
+                <p id="routeCount" class="mode-note" role="status"></p>
+                <label class="label-text" for="route">Choose a route</label>
                 <select id="route" class="cozy-input" required disabled>
                     <option value="">Loading routes…</option>
                 </select>
@@ -221,17 +174,31 @@
             </div>
             <p class="mode-note" id="resultNote"></p>
             <div class="chart-container" id="chartContainer" hidden>
-                <canvas id="seasonChart" aria-label="Toronto to Cancún demo monthly reference" role="img"></canvas>
+                <ul id="seasonChart" aria-label="Toronto to Cancún demo monthly reference"></ul>
             </div>
             <div id="historyArea" hidden>
                 <table id="history">
-                    <caption>Published airport-pair fare history</caption>
+                    <caption>Published fare history</caption>
                     <thead><tr><th scope="col">Quarter</th><th scope="col">Average fare (USD)</th></tr></thead>
                     <tbody></tbody>
                 </table>
-                <a id="source" href="#">U.S. DOT Consumer Airfare Report, Table 1a</a>
+                <a id="source" href="#">U.S. DOT benchmark source</a>
             </div>
         </section>
+
+        <details id="personal">
+            <summary>Compare my own quotes (any route)</summary>
+            <p class="mode-note">Use previous quotes for the same direction, dates, cabin, currency, and baggage terms. This compares your quotes only. Nothing is uploaded or saved, and this is not a forecast.</p>
+            <form id="personalForm">
+                <label class="label-text" for="personalPrice">New quote (your currency)</label>
+                <input id="personalPrice" class="cozy-input" type="number" min="0.01" max="100000" step="0.01" required>
+                <label class="label-text" for="pastQuotes">Previous quotes (one amount per line)</label>
+                <textarea id="pastQuotes" class="cozy-input" rows="4" maxlength="1600" placeholder="420&#10;395&#10;445" required></textarea>
+                <button class="btn-check" type="submit">Compare my quotes</button>
+                <p id="personalResult" role="status"></p>
+            </form>
+        </details>
+
     </main>
     <script src="/fare-check.js" defer></script>
 </body>

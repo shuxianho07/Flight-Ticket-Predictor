@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.ML;
 using Microsoft.ML.Data;
@@ -9,11 +10,29 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-var dataPath = Path.Combine(app.Environment.ContentRootPath, "Data", "fare-benchmarks.json");
-using var dataStream = File.OpenRead(dataPath);
-var snapshot = JsonSerializer.Deserialize<FareSnapshot>(dataStream, new JsonSerializerOptions(JsonSerializerDefaults.Web))
-    ?? throw new InvalidDataException("Missing fare benchmark data.");
-var benchmarks = snapshot.Routes.ToDictionary(route => route.Id, StringComparer.OrdinalIgnoreCase);
+const string airportSource = "https://catalog.data.gov/dataset/consumer-airfare-report-table-1a-all-u-s-airport-pair-markets";
+const string citySource = "https://data.transportation.gov/d/yj5y-b2ir";
+var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+var markets = new[] { ("airport", airportSource), ("city", citySource) }
+    .SelectMany(source =>
+    {
+        var path = Path.Combine(app.Environment.ContentRootPath, "Data", $"{source.Item1}-fares.json.gz");
+        using var file = File.OpenRead(path);
+        using var stream = new GZipStream(file, CompressionMode.Decompress);
+        return (JsonSerializer.Deserialize<FareMarket[]>(stream, options)
+            ?? throw new InvalidDataException($"Missing {source.Item1} benchmark data."))
+            .Select(market => (Market: market, Scope: source.Item1, Source: source.Item2));
+    }).ToArray();
+var benchmarks = markets.ToDictionary(entry => entry.Market.Id, StringComparer.OrdinalIgnoreCase);
+var legacy = new { id = legacyRoute, label = "Toronto (YYZ) → Cancún (CUN)", mode = "legacy-model", scope = "demo", periods = Array.Empty<string>() };
+var catalog = markets.Select(entry => new
+{
+    id = entry.Market.Id,
+    label = entry.Market.Label,
+    mode = "historical-benchmark",
+    scope = entry.Scope,
+    periods = entry.Market.Observations.Select(p => p.Period).Reverse().ToArray()
+}).OrderBy(route => route.label, StringComparer.OrdinalIgnoreCase).Prepend(legacy).ToArray();
 
 var modelPath = Path.Combine(app.Environment.ContentRootPath, "flight_model.onnx");
 var mlContext = new MLContext();
@@ -25,30 +44,21 @@ var transformer = pipeline.Fit(mlContext.Data.LoadFromEnumerable(new List<Flight
 using var engine = mlContext.Model.CreatePredictionEngine<FlightInput, FlightPrediction>(transformer);
 var engineLock = new object();
 
-app.MapGet("/api/routes", () =>
+app.MapGet("/api/routes", (HttpContext context) =>
 {
-    var routes = new List<object>
-    {
-        new { id = legacyRoute, label = "Toronto (YYZ) → Cancún (CUN)", mode = "legacy-model", periods = Array.Empty<string>() }
-    };
-    routes.AddRange(snapshot.Routes.Select(route => new
-    {
-        id = route.Id,
-        label = route.Label,
-        mode = "historical-benchmark",
-        periods = route.Observations.Select(p => p.Period).OrderDescending().ToArray()
-    }));
-    return Results.Ok(routes);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(catalog);
 });
 
 app.MapGet("/api/benchmark", (string route, decimal price, string? period) =>
 {
-    if (!benchmarks.TryGetValue(route.Trim(), out var market))
-        return Results.NotFound(new { error = "No historical benchmark is available for this airport pair." });
+    if (!benchmarks.TryGetValue(route.Trim(), out var entry))
+        return Results.NotFound(new { error = "No historical benchmark is available for this route." });
     if (price <= 0 || price > 100_000m)
         return Results.BadRequest(new { error = "Enter a positive one-way fare in USD (up to 100,000)." });
 
-    var history = market.Observations.OrderBy(p => p.Period).ToArray();
+    var market = entry.Market;
+    var history = market.Observations;
     var selected = string.IsNullOrWhiteSpace(period)
         ? history.Last()
         : history.FirstOrDefault(p => p.Period.Equals(period.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -66,7 +76,8 @@ app.MapGet("/api/benchmark", (string route, decimal price, string? period) =>
         difference,
         percentageDifference = decimal.Round(100 * difference / selected.AverageFare, 1),
         history,
-        snapshot.SourceUrl
+        scope = entry.Scope,
+        sourceUrl = entry.Source
     });
 });
 
@@ -96,7 +107,6 @@ app.MapGet("/predict", (int days, int month, double price, string? route, int? d
 
 app.Run();
 
-internal sealed record FareSnapshot(string SourceUrl, FareMarket[] Routes);
 internal sealed record FareMarket(string Id, string Label, FareQuarter[] Observations);
 internal sealed record FareQuarter(string Period, decimal AverageFare);
 
